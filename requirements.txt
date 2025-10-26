@@ -57,9 +57,9 @@ streamlit==1.50.0
 sympy==1.13.1
 tenacity==9.1.2
 toml==0.10.2
-torch==2.5.1+cu121
-torchaudio==2.5.1+cu121
-torchvision==0.20.1+cu121
+torch==2.5.1
+torchaudio==2.5.1
+torchvision==0.20.1
 tornado==6.5.2
 tqdm==4.67.1
 typing_extensions==4.15.0
@@ -68,4 +68,3 @@ ultralytics==8.3.220
 ultralytics-thop==2.0.17
 urllib3==2.5.0
 watchdog==6.0.0
-
