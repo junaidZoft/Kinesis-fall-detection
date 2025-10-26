@@ -38,10 +38,7 @@ env/
 # Project specific
 snapshots/*
 !snapshots/.gitkeep
-*.pt
-*.pth
-*.onnx
-*.engine
+
 
 # Logs
 *.log

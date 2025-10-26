@@ -476,6 +476,25 @@ def start_pipeline(hls_url, model_path, imgsz, conf_thres, use_cuda):
         st.error(f"Failed to start pipeline: {str(e)}")
         return None
 
+# Initialize required directories
+def init_directories():
+    """Create necessary directories if they don't exist"""
+    directories = [
+        Path("models/base"),
+        Path("models/fall"),
+        Path("models/fire"),
+        Path("models/weapon"),
+        SNAPSHOT_DIR / "fall",
+        SNAPSHOT_DIR / "fire",
+        SNAPSHOT_DIR / "weapon"
+    ]
+    for dir_path in directories:
+        dir_path.mkdir(parents=True, exist_ok=True)
+        print(f"Initialized directory: {dir_path}")
+
+# Create directories at startup
+init_directories()
+
 if 'threads' not in st.session_state:
     st.session_state['threads'] = None
 
