@@ -16,6 +16,8 @@ import platform
 MODEL_PATH_DEFAULT = "models/fall/fall.pt"  # Update path
 IMGSZ = 640
 CONF_THRES = 0.35
+FIRE_CONF_THRES = 0.25  # Default fire detection threshold
+WEAPON_CONF_THRES = 0.25  # Default weapon detection threshold
 NMS_IOU = 0.45
 QUEUE_SIZE = 4
 DISPLAY_FPS = True
@@ -23,6 +25,8 @@ PERSON_MODEL_PATH = "models/base/yolov8n.pt"  # Update path
 FIRE_MODEL_PATH = "models/fire/fire.pt"  # Update path
 WEAPON_MODEL_PATH = "models/weapon/weapon.pt"  # Update path
 SNAPSHOT_DIR = Path("snapshots")  # Add this config
+S3_BUCKET = os.getenv("AWS_S3_BUCKET")
+S3_PREFIX = os.getenv("AWS_S3_PREFIX", "detections/")
 # ==============
 
 # Load .env
@@ -88,7 +92,9 @@ with col2:
         hls_url = None
     model_path = st.text_input("YOLO weights", MODEL_PATH_DEFAULT)
     imgsz = st.number_input("Image size (px)", min_value=224, max_value=1280, value=IMGSZ, step=32)
-    conf_thres = st.slider("Confidence threshold", 0.05, 0.99, CONF_THRES, 0.01)
+    conf_thres = st.slider("Fall Detection Threshold", 0.05, 0.99, CONF_THRES, 0.01)
+    fire_conf = st.slider("Fire Detection Threshold", 0.05, 0.99, FIRE_CONF_THRES, 0.01)
+    weapon_conf = st.slider("Weapon Detection Threshold", 0.05, 0.99, WEAPON_CONF_THRES, 0.01)
     use_cuda = st.checkbox("Use CUDA (if available)", value=torch.cuda.is_available())
     start_stop = st.button("▶️ Start/Restart Stream")
     st.markdown("---")
@@ -256,13 +262,65 @@ def beep():
     except Exception:
         pass
 
+def init_s3_folders():
+    """Initialize S3 folders for detections"""
+    try:
+        s3_client = boto3.client(
+            's3',
+            region_name=AWS_REGION,
+            aws_access_key_id=AWS_ACCESS_KEY_ID,
+            aws_secret_access_key=AWS_SECRET_ACCESS_KEY
+        )
+        
+        # Create empty objects to represent folders
+        folders = [
+            f"{S3_PREFIX}fall/",
+            f"{S3_PREFIX}fire/",
+            f"{S3_PREFIX}weapon/"
+        ]
+        
+        for folder in folders:
+            s3_client.put_object(Bucket=S3_BUCKET, Key=folder)
+            print(f"Initialized S3 folder: s3://{S3_BUCKET}/{folder}")
+            
+    except Exception as e:
+        print(f"Failed to initialize S3 folders: {e}")
+
+def upload_to_s3(file_path: Path, detection_type: str):
+    """Upload file to S3 bucket with folder verification"""
+    try:
+        s3_client = boto3.client(
+            's3',
+            region_name=AWS_REGION,
+            aws_access_key_id=AWS_ACCESS_KEY_ID,
+            aws_secret_access_key=AWS_SECRET_ACCESS_KEY
+        )
+        
+        # Verify folder exists
+        folder_key = f"{S3_PREFIX}{detection_type}/"
+        try:
+            s3_client.head_object(Bucket=S3_BUCKET, Key=folder_key)
+        except:
+            # Create folder if doesn't exist
+            s3_client.put_object(Bucket=S3_BUCKET, Key=folder_key)
+            print(f"Created missing folder: s3://{S3_BUCKET}/{folder_key}")
+        
+        # Upload file
+        s3_key = f"{folder_key}{file_path.name}"
+        s3_client.upload_file(str(file_path), S3_BUCKET, s3_key)
+        print(f"Uploaded {file_path.name} to s3://{S3_BUCKET}/{s3_key}")
+        
+    except Exception as e:
+        print(f"Failed to upload to S3: {e}")
+
 def save_fall_frame(frame):
-    """Save frame to fall folder with timestamp."""
+    """Save frame locally and to S3"""
     fall_dir = SNAPSHOT_DIR / "fall"
     fall_dir.mkdir(exist_ok=True, parents=True)
     ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
     filename = fall_dir / f"fall_{ts}.jpg"
     cv2.imwrite(str(filename), frame)
+    upload_to_s3(filename, "fall")
 
 def save_fire_frame(frame):
     fire_dir = SNAPSHOT_DIR / "fire"
@@ -270,6 +328,7 @@ def save_fire_frame(frame):
     ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
     filename = fire_dir / f"fire_{ts}.jpg"
     cv2.imwrite(str(filename), frame)
+    upload_to_s3(filename, "fire")
 
 def save_weapon_frame(frame):
     weapon_dir = SNAPSHOT_DIR / "weapon"
@@ -277,8 +336,9 @@ def save_weapon_frame(frame):
     ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
     filename = weapon_dir / f"weapon_{ts}.jpg"
     cv2.imwrite(str(filename), frame)
+    upload_to_s3(filename, "weapon")
 
-def inference_thread(cap_q, out_q, stop_event, model_info, device, imgsz, conf_thres, nms_iou):
+def inference_thread(cap_q, out_q, stop_event, model_info, device, imgsz, conf_thres, fire_conf, weapon_conf, nms_iou):
     backend_type, fall_model = model_info
     person_model = load_person_model(device)
     fire_model = load_fire_model(device)
@@ -381,7 +441,7 @@ def inference_thread(cap_q, out_q, stop_event, model_info, device, imgsz, conf_t
         # --- Fire Detection ---
         fire_detected = False
         try:
-            fire_results = fire_model.predict(source=[frame], imgsz=imgsz, conf=0.25, iou=0.5, device=device, half=(device.startswith("cuda")))
+            fire_results = fire_model.predict(source=[frame], imgsz=imgsz, conf=fire_conf, iou=0.5, device=device, half=(device.startswith("cuda")))
             for result in fire_results:
                 for box in result.boxes:
                     cls_name = fire_model.names[int(box.cls[0])].lower()
@@ -401,7 +461,7 @@ def inference_thread(cap_q, out_q, stop_event, model_info, device, imgsz, conf_t
         # --- Weapon Detection ---
         weapon_detected = False
         try:
-            weapon_results = weapon_model.predict(source=[frame], imgsz=imgsz, conf=0.25, iou=0.5, device=device, half=(device.startswith("cuda")))
+            weapon_results = weapon_model.predict(source=[frame], imgsz=imgsz, conf=weapon_conf, iou=0.5, device=device, half=(device.startswith("cuda")))
             for result in weapon_results:
                 for box in result.boxes:
                     cls_name = weapon_model.names[int(box.cls[0])].lower()
@@ -441,7 +501,7 @@ def inference_thread(cap_q, out_q, stop_event, model_info, device, imgsz, conf_t
         except queue.Full:
             pass
 
-def start_pipeline(hls_url, model_path, imgsz, conf_thres, use_cuda):
+def start_pipeline(hls_url, model_path, imgsz, conf_thres, fire_conf, weapon_conf, use_cuda):
     """Modified pipeline start with better error handling"""
     try:
         stop_event.clear()
@@ -466,7 +526,11 @@ def start_pipeline(hls_url, model_path, imgsz, conf_thres, use_cuda):
             model_info = load_model(model_path, device=device, imgsz=imgsz)
         
         cap_thread = threading.Thread(target=video_capture_thread, args=(hls_url, frame_q, stop_event), daemon=True)
-        inf_thread = threading.Thread(target=inference_thread, args=(frame_q, out_q, stop_event, model_info, device, imgsz, conf_thres, NMS_IOU), daemon=True)
+        inf_thread = threading.Thread(
+            target=inference_thread,
+            args=(frame_q, out_q, stop_event, model_info, device, imgsz, conf_thres, fire_conf, weapon_conf, NMS_IOU),
+            daemon=True
+        )
         
         cap_thread.start()
         inf_thread.start()
@@ -494,6 +558,7 @@ def init_directories():
 
 # Create directories at startup
 init_directories()
+init_s3_folders()  # Add this line
 
 if 'threads' not in st.session_state:
     st.session_state['threads'] = None
@@ -504,7 +569,7 @@ if start_stop:
         time.sleep(0.3)
         stop_event.clear()
     try:
-        threads = start_pipeline(hls_url, model_path, imgsz, conf_thres, use_cuda)
+        threads = start_pipeline(hls_url, model_path, imgsz, conf_thres, fire_conf, weapon_conf, use_cuda)
         st.session_state['threads'] = threads
         log.text(f"Started pipeline at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     except Exception as e:
