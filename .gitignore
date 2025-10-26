@@ -1,49 +1,52 @@
-# Byte-compiled / optimized / DLL files
+# Python
 __pycache__/
 *.py[cod]
 *$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
 
-# Virtual environments
+# Virtual Environment
 venv/
 ENV/
 env/
-.venv/
-.venv/*
 
-# Distribution / packaging
-build/
-dist/
-*.egg-info/
-pip-wheel-metadata/
+# Environment Variables
+.env
+*.env
 
-# Unit test / coverage
-.pytest_cache/
-.coverage
-coverage.xml
-htmlcov/
-
-# IDEs and editors
-.vscode/
+# IDE
 .idea/
-*.sublime-project
-*.sublime-workspace
+.vscode/
+*.swp
+*.swo
 
-# OS files
+# Project specific
+snapshots/*
+!snapshots/.gitkeep
+*.pt
+*.pth
+*.onnx
+*.engine
+
+# Logs
+*.log
+logs/
+
+# OS specific
 .DS_Store
 Thumbs.db
-
-# dotenv and secrets
-.env
-.env.* 
-
-# Streamlit local config/state
-.streamlit/
-
-# AWS local files
-.aws/
-credentials
-config
-
-# Misc
-*.log
-*.sqlite3

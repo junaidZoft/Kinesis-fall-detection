@@ -1,1 +1,1 @@
-# Kinesis-fall-detection
+# Kinesis-detection
