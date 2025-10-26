@@ -50,3 +50,13 @@ logs/
 # OS specific
 .DS_Store
 Thumbs.db
+
+# Images and Media
+*.jpg
+*.jpeg
+*.png
+*.gif
+*.bmp
+*.mp4
+*.avi
+*.mov
